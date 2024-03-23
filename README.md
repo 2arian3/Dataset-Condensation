@@ -3,6 +3,6 @@ This repo contains all the codes and documents for EECS 6322 project. In this pr
 
 
 ## Contributors
-- [Aida Aminian](#)
+- [Aida Aminian](https://github.com/aidaaminian)
 - [Arian Boukani](https://github.com/2arian3)
 
