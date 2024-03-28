@@ -20,8 +20,11 @@ class LeNet(nn.Module):
 
     def forward(self, x):
         x = self.features(x)
+
         x = x.view(x.size(0), -1)
+
         x = F.relu(self.fc_1(x))
         x = F.relu(self.fc_2(x))
         x = self.fc_3(x)
+        
         return x
