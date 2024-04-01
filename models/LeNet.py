@@ -4,10 +4,10 @@ import torch.nn.functional as F
 
 
 class LeNet(nn.Module):
-    def __init__(self, channel, num_classes):
+    def __init__(self, num_channels, num_classes):
         super(LeNet, self).__init__()
         self.features = nn.Sequential(
-            nn.Conv2d(channel, 6, kernel_size=5, padding=2 if channel==1 else 0),
+            nn.Conv2d(num_channels, 6, kernel_size=5, padding=2 if num_channels==1 else 0),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.Conv2d(6, 16, kernel_size=5),

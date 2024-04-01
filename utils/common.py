@@ -1,3 +1,5 @@
+import datetime
+
 from consts import Datasets, Networks
 
 from ..models.MultiLayerPerceptron import MultiLayerPerceptron
@@ -5,6 +7,7 @@ from ..models.ConvNet import ConvNet
 from ..models.LeNet import LeNet
 from ..models.AlexNet import AlexNet
 
+import torch
 from torch.utils.data import Dataset
 from torchvision import datasets, transforms
 
@@ -87,16 +90,35 @@ class TensorDataset(Dataset):
 
 
 def get_network(network_name, num_channels, num_classes, img_size=(28, 28)):
+
     if network_name == Networks.MLP:
-        pass
+        model = MultiLayerPerceptron(input_dim=img_size[0] * img_size[1] * num_channels, output_dim=num_classes)
 
     elif network_name == Networks.ConvNet:
         pass
 
     elif network_name == Networks.LeNet:
-        pass
+        model = LeNet(num_channels=num_channels, num_classes=num_classes)
 
     elif network_name == Networks.AlexNet:
-        pass
+        model = AlexNet(num_channels=num_channels, num_classes=num_classes)
+
+    else:
+        return None
+    
+    gpu_instances = torch.cuda.device_count()
+
+    device = 'cuda'
+    if gpu_instances > 1:
+        model = torch.nn.DataParallel(model)
+
+    elif gpu_instances == 0:
+        device = 'cpu'
+
+    model = model.to(device)
+
+    return model
 
 
+def get_current_time():
+    return datetime.datetime.now().strftime('[%Y-%m-%d %H:%M:%S]')

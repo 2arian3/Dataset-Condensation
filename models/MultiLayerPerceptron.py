@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 class MultiLayerPerceptron(nn.Module):
 
-    def __init__(self, input_dim, hidden_dim, output_dim):
+    def __init__(self, input_dim, output_dim, hidden_dim=128):
         super(MultiLayerPerceptron, self).__init__()
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
