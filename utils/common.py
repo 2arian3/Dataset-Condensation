@@ -1,11 +1,11 @@
 import datetime
 
-from consts import Datasets, Networks
+from .consts import Datasets, Networks, DEVICE
 
-from ..models.MultiLayerPerceptron import MultiLayerPerceptron
-from ..models.ConvNet import ConvNet
-from ..models.LeNet import LeNet
-from ..models.AlexNet import AlexNet
+from models.MultiLayerPerceptron import MultiLayerPerceptron
+from models.ConvNet import ConvNet
+from models.LeNet import LeNet
+from models.AlexNet import AlexNet
 
 import torch
 from torch.utils.data import Dataset
@@ -43,12 +43,15 @@ class DatasetInfo:
             'std': (0.1980, 0.2010, 0.1970)
         }
     }
-    def __init__(self, dataset_name) -> None:
+    def __init__(self, dataset_name: str, dataset_path='./data') -> None:
+        dataset_name = dataset_name.lower()
+
         dataset_info = DatasetInfo.DATASETS_INFO[dataset_name]
 
         self.img_size = dataset_info['img_size']
         self.num_of_classes = dataset_info['num_of_classes']
         self.class_names = dataset_info['class_names']
+        self.num_of_channels = self.img_size[0]
 
         self.mean = dataset_info['mean']
         self.std = dataset_info['std']
@@ -58,22 +61,22 @@ class DatasetInfo:
             transforms.Normalize(self.mean, self.std)
         ])
 
-        if dataset_name == Datasets.MNIST:
-            self.train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=self.transform)
-            self.test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=self.transform)
 
-        elif dataset_name == Datasets.FASHTION_MNIST:
-            self.train_dataset = datasets.FashionMNIST(root='./data', train=True, download=True, transform=self.transform)
-            self.test_dataset = datasets.FashionMNIST(root='./data', train=False, download=True, transform=self.transform)
+        if dataset_name == Datasets.MNIST.value:
+            self.train_dataset = datasets.MNIST(root=dataset_path, train=True, download=True, transform=self.transform)
+            self.test_dataset = datasets.MNIST(root=dataset_path, train=False, download=True, transform=self.transform)
 
-        elif dataset_name == Datasets.CIFAR10:
-            self.train_dataset = datasets.CIFAR10(root='./data', train=True, download=True, transform=self.transform)
-            self.test_dataset = datasets.CIFAR10(root='./data', train=False, download=True, transform=self.transform)
+        elif dataset_name == Datasets.FASHTION_MNIST.value:
+            self.train_dataset = datasets.FashionMNIST(root=dataset_path, train=True, download=True, transform=self.transform)
+            self.test_dataset = datasets.FashionMNIST(root=dataset_path, train=False, download=True, transform=self.transform)
 
-        elif dataset_name == Datasets.SVHN:
-            self.train_dataset = datasets.SVHN(root='./data', split='train', download=True, transform=self.transform)
-            self.test_dataset = datasets.SVHN(root='./data', split='test', download=True, transform=self.transform)
+        elif dataset_name == Datasets.CIFAR10.value:
+            self.train_dataset = datasets.CIFAR10(root=dataset_path, train=True, download=True, transform=self.transform)
+            self.test_dataset = datasets.CIFAR10(root=dataset_path, train=False, download=True, transform=self.transform)
 
+        elif dataset_name == Datasets.SVHN.value:
+            self.train_dataset = datasets.SVHN(root=dataset_path, split='train', download=True, transform=self.transform)
+            self.test_dataset = datasets.SVHN(root=dataset_path, split='test', download=True, transform=self.transform)
 
 
 class TensorDataset(Dataset):
@@ -86,21 +89,22 @@ class TensorDataset(Dataset):
 
     def __len__(self):
         return self.images.shape[0]
-    
 
 
-def get_network(network_name, num_channels, num_classes, img_size=(28, 28)):
+def get_network(network_name: str, num_channels: int, num_classes: int, img_size=(28, 28)):
 
-    if network_name == Networks.MLP:
+    network_name = network_name.lower()
+
+    if network_name == Networks.MLP.value:
         model = MultiLayerPerceptron(input_dim=img_size[0] * img_size[1] * num_channels, output_dim=num_classes)
 
-    elif network_name == Networks.ConvNet:
+    elif network_name == Networks.ConvNet.value:
         pass
 
-    elif network_name == Networks.LeNet:
+    elif network_name == Networks.LeNet.value:
         model = LeNet(num_channels=num_channels, num_classes=num_classes)
 
-    elif network_name == Networks.AlexNet:
+    elif network_name == Networks.AlexNet.value:
         model = AlexNet(num_channels=num_channels, num_classes=num_classes)
 
     else:
@@ -108,17 +112,23 @@ def get_network(network_name, num_channels, num_classes, img_size=(28, 28)):
     
     gpu_instances = torch.cuda.device_count()
 
-    device = 'cuda'
     if gpu_instances > 1:
         model = torch.nn.DataParallel(model)
 
-    elif gpu_instances == 0:
-        device = 'cpu'
-
-    model = model.to(device)
+    model = model.to(DEVICE)
 
     return model
 
 
 def get_current_time():
     return datetime.datetime.now().strftime('[%Y-%m-%d %H:%M:%S]')
+
+
+def get_random_imgs(imgs, class_indices, num_imgs=1):
+    random_imgs = []
+
+    for c in range(len(class_indices)):
+        random_indices = torch.randperm(len(class_indices[c]))[:num_imgs]
+        random_imgs.append(imgs[class_indices[c][random_indices]])
+
+    return random_imgs

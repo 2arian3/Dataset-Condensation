@@ -12,12 +12,12 @@ class MultiLayerPerceptron(nn.Module):
         self.fc3 = nn.Linear(hidden_dim, output_dim)
 
 
-    def forward(self, x_in, apply_softmax=False):
-        y_pred = F.relu(self.fc1(x_in))
-        y_pred = F.relu(self.fc2(y_pred))
-        y_pred = self.fc2(y_pred)
+    def forward(self, x, apply_softmax=False):
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc2(x)
 
         if apply_softmax:
-            y_pred = F.softmax(y_pred, dim=1)
+            x = F.softmax(x, dim=1)
 
-        return y_pred
+        return x
