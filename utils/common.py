@@ -7,6 +7,7 @@ from models.ConvNet import ConvNet
 from models.LeNet import LeNet
 from models.AlexNet import AlexNet
 
+import numpy as np
 import torch
 from torch.utils.data import Dataset
 from torchvision import datasets, transforms
@@ -48,10 +49,10 @@ class DatasetInfo:
 
         dataset_info = DatasetInfo.DATASETS_INFO[dataset_name]
 
-        self.img_size = dataset_info['img_size']
+        self.img_size = dataset_info['img_size'][1:3]
         self.num_of_classes = dataset_info['num_of_classes']
         self.class_names = dataset_info['class_names']
-        self.num_of_channels = self.img_size[0]
+        self.num_of_channels = dataset_info['img_size'][0]
 
         self.mean = dataset_info['mean']
         self.std = dataset_info['std']
@@ -91,7 +92,7 @@ class TensorDataset(Dataset):
         return self.images.shape[0]
 
 
-def get_network(network_name: str, num_channels: int, num_classes: int, img_size=(28, 28)):
+def get_network(network_name: str, num_channels: int, num_classes: int, img_size=(28, 28)) -> torch.nn.Module | None:
 
     network_name = network_name.lower()
 
@@ -124,11 +125,55 @@ def get_current_time():
     return datetime.datetime.now().strftime('[%Y-%m-%d %H:%M:%S]')
 
 
-def get_random_imgs(imgs, class_indices, num_imgs=1):
-    random_imgs = []
+def get_outer_and_inner_loops(ipc=1):
+    outer_loop, inner_loop = 1, 1
 
-    for c in range(len(class_indices)):
-        random_indices = torch.randperm(len(class_indices[c]))[:num_imgs]
-        random_imgs.append(imgs[class_indices[c][random_indices]])
+    if ipc == 1:
+        outer_loop, inner_loop = 1, 1
 
-    return random_imgs
+    elif ipc == 10:
+        outer_loop, inner_loop = 10, 50
+
+    elif ipc == 50:
+        outer_loop, inner_loop = 50, 10
+
+    return outer_loop, inner_loop
+
+
+def get_eval_pool(model, eval_mode='M'):
+    if eval_mode == 'M':
+        model_eval_pool = ['MLP', 'ConvNet', 'LeNet', 'AlexNet']
+    elif eval_mode == 'I':
+        model_eval_pool = [model]
+
+    return model_eval_pool
+
+
+def get_match_loss(g_syn, g_real, metric='mse'):
+    d = torch.tensor(0.0).to(DEVICE)
+
+    if metric == 'mse':
+        g_real_vec = []
+        g_syn_vec = []
+        for ig in range(len(g_real)):
+            g_real_vec.append(g_real[ig].reshape((-1)))
+            g_syn_vec.append(g_syn[ig].reshape((-1)))
+        g_real_vec = torch.cat(g_real_vec, dim=0)
+        g_syn_vec = torch.cat(g_syn_vec, dim=0)
+        d = torch.sum((g_syn_vec - g_real_vec)**2)
+
+    elif metric == 'cos':
+        g_real_vec = []
+        g_syn_vec = []
+        for ig in range(len(g_real)):
+            g_real_vec.append(g_real[ig].reshape((-1)))
+            g_syn_vec.append(g_syn[ig].reshape((-1)))
+        g_real_vec = torch.cat(g_real_vec, dim=0)
+        g_syn_vec = torch.cat(g_syn_vec, dim=0)
+        d = 1 - torch.sum(g_real_vec * g_syn_vec, dim=-1) / (torch.norm(g_real_vec, dim=-1) * torch.norm(g_syn_vec, dim=-1) + 0.000001)
+
+    return d
+
+
+def evaluate_synthetic_dataset(model, syn_imgs, syn):
+    pass

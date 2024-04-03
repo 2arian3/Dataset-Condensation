@@ -23,4 +23,6 @@ LR_NETWORK = 0.01
 BATCH_SIZE_REAL = 256
 BATCH_SIZE_TRAIN = 256
 
+ITERATIONS = 1000
+
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
