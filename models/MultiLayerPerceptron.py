@@ -13,9 +13,11 @@ class MultiLayerPerceptron(nn.Module):
 
 
     def forward(self, x, apply_softmax=False):
+        x = x.view(x.size(0), -1)
+
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        x = self.fc2(x)
+        x = self.fc3(x)
 
         if apply_softmax:
             x = F.softmax(x, dim=1)
