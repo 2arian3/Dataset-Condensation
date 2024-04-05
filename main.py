@@ -6,10 +6,13 @@ import argparse
 
 from utils.common import (DatasetInfo,
                           TensorDataset,
+                          iteration,
                           get_network,
                           get_current_time,
                           get_match_loss,
                           get_eval_pool,
+                          get_random_images,
+                          get_synset_evaluation,
                           get_outer_and_inner_loops)
 
 from utils.consts import (DEVICE,
@@ -17,6 +20,7 @@ from utils.consts import (DEVICE,
                           LR_NETWORK,
                           LR_SYNTHETIC,
                           BATCH_SIZE_REAL,
+                          BATCH_SIZE_TEST,
                           BATCH_SIZE_TRAIN)
 
 
@@ -54,7 +58,9 @@ if __name__ == "__main__":
     exps_records = {}
     for key in model_eval_pool:
         exps_records[key] = []
-    
+
+
+    test_loader = torch.utils.data.DataLoader(dataset.test_dataset, batch_size=BATCH_SIZE_TEST, shuffle=False)
 
 
     for exp in range(args.num_of_exp):
@@ -69,10 +75,6 @@ if __name__ == "__main__":
         real_imgs = torch.cat(real_imgs, dim=0).to(DEVICE)
         real_labels = torch.tensor(real_labels).to(DEVICE)
 
-        def get_random_imgs(c, num_imgs=1):
-            shuffle_indices = np.random.permutation(len(class_indices[c]))[:num_imgs]
-            return real_imgs[shuffle_indices]
-
         for c in range(dataset.num_of_classes):
             print(f'Class {c}: {len(class_indices[c])} images \n')
         
@@ -86,7 +88,7 @@ if __name__ == "__main__":
         # Synthetic dataset initialization if the mode is 'real'
         if args.syn_init == 'real':
             for c in range(dataset.num_of_classes):
-                syn_imgs.data[c*args.ipc:(c+1)*args.ipc] = get_random_imgs(c, args.ipc).detach().data
+                syn_imgs.data[c*args.ipc:(c+1)*args.ipc] = get_random_images(real_imgs, class_indices, c, args.ipc).detach().data
 
         img_opt = torch.optim.SGD([syn_imgs], lr=LR_SYNTHETIC, momentum=0.5)
         img_opt.zero_grad()
@@ -103,14 +105,16 @@ if __name__ == "__main__":
                     accuracies = []
                     
                     for it_eval in range(args.num_of_eval):
-                        net_eval = get_network(model_eval, dataset.num_of_channels, dataset.num_of_classes, dataset.img_size).to(DEVICE)
+                        net_eval = get_network(model_eval, dataset.num_of_channels, dataset.num_of_classes, dataset.img_size)
                         image_syn_eval, label_syn_eval = copy.deepcopy(syn_imgs.detach()), copy.deepcopy(syn_labels.detach())
                         # TODO: evaluate synthetic dataset
+                        train_acc, test_acc = get_synset_evaluation(it_eval, net_eval, image_syn_eval, label_syn_eval, test_loader, args.epoch_eval_train)
+                        accuracies.append(test_acc)
 
                     if it == ITERATIONS:
                         exps_records[model_eval].append(accuracies)
             
-            net = get_network(args.network, dataset.num_of_channels, dataset.num_of_classes, dataset.img_size).to(DEVICE)
+            net = get_network(args.network, dataset.num_of_channels, dataset.num_of_classes, dataset.img_size)
             net.train()
 
             net_params = list(net.parameters())
@@ -127,7 +131,7 @@ if __name__ == "__main__":
                 loss = torch.tensor(0.0).to(DEVICE)
                 
                 for c in range(dataset.num_of_classes):
-                    real_img = get_random_imgs(c, BATCH_SIZE_REAL)
+                    real_img = get_random_images(real_imgs, class_indices, c, BATCH_SIZE_REAL)
                     real_lab = torch.ones((real_img.shape[0],), dtype=torch.long).to(DEVICE) * c
                     syn_img = syn_imgs[c*args.ipc:(c+1)*args.ipc].reshape((args.ipc,
                                                                            dataset.num_of_channels,
@@ -159,40 +163,16 @@ if __name__ == "__main__":
                 train_loader = torch.utils.data.DataLoader(syn_train_dataset, batch_size=BATCH_SIZE_TRAIN, shuffle=True)
 
                 for inner in range(inner_loop):
-                    inner_loss_avg, inner_acc_avg, num_of_exp = 0, 0, 0
-                    net = net.to(DEVICE)
-                    loss_fn = loss_fn.to(DEVICE)
-
-                    net.train()
-
-                    for _, data in enumerate(train_loader, 0):
-                        img = data[0].float().to(DEVICE)
-                        lab = data[1].long().to(DEVICE)
-                        n_b = lab.shape[0]
-
-                        out = net(img)
-                        l = loss_fn(out, lab)
-                        acc = np.sum(np.equal(torch.argmax(out, dim=1).cpu().detach().numpy(), lab.cpu().detach().numpy())) / n_b
-
-                        inner_loss_avg += l.item() * n_b
-                        inner_acc_avg += acc
-                        num_of_exp += n_b
-
-                        net_opt.zero_grad()
-                        l.backward()
-                        net_opt.step()
-                    
-                    inner_loss_avg /= num_of_exp
-                    inner_acc_avg /= num_of_exp
+                    inner_loss_avg, inner_acc_avg = iteration(net, loss_fn, net_opt, train_loader, is_training=True)
 
                 loss_avg /= (dataset.num_of_classes * outer_loop)
 
                 if it%10 == 0:
-                    print(f'Iteration {it+1}/{ITERATIONS}, Outer loop {outer+1}/{outer_loop}, Inner loop {inner+1}/{inner_loop}, Time {get_current_time()}, Loss {loss_avg}, Inner Loss {inner_loss_avg}, Inner Acc {inner_acc_avg}')
+                    print(f'Iteration {it+1}/{ITERATIONS+1}, Outer loop {outer+1}/{outer_loop}, Inner loop {inner+1}/{inner_loop}, Time {get_current_time()}, Loss {loss_avg}, Inner Loss {inner_loss_avg}, Inner Acc {inner_acc_avg}')
                 
                 if it == ITERATIONS:
                     data_to_save.append([copy.deepcopy(syn_imgs.detach().cpu()), copy.deepcopy(syn_labels.detach().cpu())])
-                    torch.save({'syn_imgs': syn_imgs, 'syn_labels': syn_labels}, f'syndata/{args.dataset}_{args.network}_{args.ipc}_{exp}.pt')
+                    torch.save({'syn_imgs': syn_imgs, 'syn_labels': syn_labels}, f'syndata/{args.dataset}_{args.network}_ipc-{args.ipc}_exp-{exp}.pt')
 
 
     print('***Finished Training***')
