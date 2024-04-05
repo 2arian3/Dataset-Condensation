@@ -1,6 +1,11 @@
+import time
 import datetime
 
-from .consts import Datasets, Networks, DEVICE
+from .consts import (Datasets,
+                     Networks,
+                     LR_SYNTHETIC,
+                     BATCH_SIZE_TRAIN,
+                     DEVICE)
 
 from models.MultiLayerPerceptron import MultiLayerPerceptron
 from models.ConvNet import ConvNet
@@ -175,5 +180,67 @@ def get_match_loss(g_syn, g_real, metric='mse'):
     return d
 
 
-def evaluate_synthetic_dataset(model, syn_imgs, syn):
-    pass
+def get_random_images(real_imgs, class_indices, c, num_imgs=1):
+    shuffle_indices = np.random.permutation(len(class_indices[c]))[:num_imgs]
+    return real_imgs[shuffle_indices]
+
+
+def iteration(net, loss_fn, optimizer, train_loader, is_training=True):
+    loss_avg, acc_avg, num_of_exp = 0, 0, 0
+    net = net.to(DEVICE)
+    loss_fn = loss_fn.to(DEVICE)
+
+    if is_training:
+        net.train()
+    else:
+        net.eval()
+
+    for _, data in enumerate(train_loader, 0):
+        img = data[0].float().to(DEVICE)
+        lab = data[1].long().to(DEVICE)
+        n_b = lab.shape[0]
+
+        out = net(img)
+        l = loss_fn(out, lab)
+        acc = np.sum(np.equal(torch.argmax(out, dim=1).cpu().detach().numpy(), lab.cpu().detach().numpy())) / n_b
+
+        loss_avg += l.item() * n_b
+        acc_avg += acc
+        num_of_exp += n_b
+
+        if is_training:
+            optimizer.zero_grad()
+            l.backward()
+            optimizer.step()
+    
+    loss_avg /= num_of_exp
+    acc_avg /= num_of_exp
+
+    return loss_avg, acc_avg
+
+
+def get_synset_evaluation(it_eval, net_eval, image_syn_eval, label_syn_eval, test_loader, epoch_eval_train):
+    image_syn_eval, label_syn_eval = image_syn_eval.to(DEVICE), label_syn_eval.to(DEVICE)
+
+    lr = LR_SYNTHETIC
+    lr_scheduler = [epoch_eval_train // 2 + 1]
+
+    optimizer = torch.optim.SGD(net_eval.parameters(), lr=LR_SYNTHETIC, momentum=0.9)
+    loss_fn = torch.nn.CrossEntropyLoss().to(DEVICE)
+
+    train_dataset = TensorDataset(image_syn_eval, label_syn_eval)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE_TRAIN, shuffle=True)
+
+    start_time = time.time()
+    for epoch in range(epoch_eval_train + 1):
+        train_loss, train_accuracy = iteration(net_eval, loss_fn, optimizer, train_loader, is_training=True)
+        if epoch in lr_scheduler:
+            lr *= 0.1
+            optimizer = torch.optim.SGD(net_eval.parameters(), lr=lr, momentum=0.9, weight_decay=5e-4)
+
+    finish_time = time.time() - start_time
+    test_loss, test_accuracy = iteration(net_eval, loss_fn, optimizer, test_loader, is_training=False)
+
+    print('Evaluation for iteration {} is completed in {:.2f} seconds, train loss = {:.2f}, train acc = {:.2f}, test loss = {:.2f}, test acc = {:.2f}'.format(it_eval, finish_time, train_loss, train_accuracy, test_loss, test_accuracy))
+
+    return train_accuracy, test_accuracy
