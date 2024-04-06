@@ -202,7 +202,7 @@ def iteration(net, loss_fn, optimizer, train_loader, is_training=True):
 
         out = net(img)
         l = loss_fn(out, lab)
-        acc = np.sum(np.equal(torch.argmax(out, dim=1).cpu().detach().numpy(), lab.cpu().detach().numpy())) / n_b
+        acc = np.sum(np.equal(np.argmax(out.cpu().data.numpy(), axis=-1), lab.cpu().data.numpy()))
 
         loss_avg += l.item() * n_b
         acc_avg += acc
