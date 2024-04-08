@@ -3,9 +3,9 @@ channels:
   - pytorch
   - defaults
 dependencies:
-  - python=3.11
-  - pytorch=2.2.0
-  - torchvision=0.17.0
+  - python=3.10
+  - pytorch=1.13.0
+  - torchvision=0.14.0
   - numpy=1.26.3
   - scipy=1.12.0
   - pip
@@ -17,5 +17,3 @@ dependencies:
       - tensorboard==2.12.0
       - tensorboard-data-server==0.7.0
       - tensorboard-plugin-wit==1.8.1
-      - timm==0.9.16
-      - torchtext==0.17.1

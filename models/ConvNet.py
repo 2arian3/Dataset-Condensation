@@ -4,10 +4,10 @@ import torch.nn.functional as F
 
 
 class ConvNet(nn.Module):
-    def __init__(self, channel, num_classes, net_width, net_depth, net_act, net_norm, net_pooling, im_size = (32, 32)):
+    def __init__(self, num_channels, num_classes, net_width=128, net_depth=3, net_act='relu', net_norm='instancenorm', net_pooling='avgpooling', img_size = (32, 32)):
         super(ConvNet, self).__init__()
 
-        self.features, shape_feat = self._make_layers(channel, net_width, net_depth, net_norm, net_act, net_pooling, im_size)
+        self.features, shape_feat = self._make_layers(num_channels, net_width, net_depth, net_norm, net_act, net_pooling, img_size)
         num_feat = shape_feat[0]*shape_feat[1]*shape_feat[2]
         self.classifier = nn.Linear(num_feat, num_classes)
 

@@ -1,9 +1,12 @@
 import time
 import datetime
+import logging
+import os
+import copy
 
 from .consts import (Datasets,
                      Networks,
-                     LR_SYNTHETIC,
+                     PWD,
                      BATCH_SIZE_TRAIN,
                      DEVICE)
 
@@ -16,6 +19,22 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 from torchvision import datasets, transforms
+from torchvision.utils import save_image
+
+
+class Logger:
+    LOG_PATH = f'{PWD}/logs/log_{datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.log'
+
+    def __init__(self) -> None:
+        logging.basicConfig(filename=Logger.LOG_PATH,
+                        level=logging.INFO,
+                        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                        datefmt='%Y-%m-%d %H:%M:%S')
+
+    
+    @staticmethod
+    def info(message):
+        logging.info(message)
 
 
 class DatasetInfo:
@@ -27,7 +46,7 @@ class DatasetInfo:
             'mean': (0.1307,),
             'std': (0.3081,)
         },
-        'fashion_mnist': {
+        'fashionmnist': {
             'img_size': (1, 28, 28),
             'num_of_classes': 10,
             'class_names': ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat', 'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot'],
@@ -105,7 +124,7 @@ def get_network(network_name: str, num_channels: int, num_classes: int, img_size
         model = MultiLayerPerceptron(input_dim=img_size[0] * img_size[1] * num_channels, output_dim=num_classes)
 
     elif network_name == Networks.ConvNet.value:
-        pass
+        model = ConvNet(num_channels=num_channels, num_classes=num_classes, img_size=img_size)
 
     elif network_name == Networks.LeNet.value:
         model = LeNet(num_channels=num_channels, num_classes=num_classes)
@@ -154,7 +173,27 @@ def get_eval_pool(model, eval_mode='M'):
     return model_eval_pool
 
 
-def get_match_loss(g_syn, g_real, metric='mse'):
+def distance_wb(gr, gs):
+    shape = gr.shape
+    if len(shape) == 4: # conv, out*in*h*w
+        gr = gr.reshape(shape[0], shape[1] * shape[2] * shape[3])
+        gs = gs.reshape(shape[0], shape[1] * shape[2] * shape[3])
+    elif len(shape) == 3:  # layernorm, C*h*w
+        gr = gr.reshape(shape[0], shape[1] * shape[2])
+        gs = gs.reshape(shape[0], shape[1] * shape[2])
+    elif len(shape) == 2: # linear, out*in
+        tmp = 'do nothing'
+    elif len(shape) == 1: # groupnorm x, bias
+        gr = gr.reshape(1, shape[0])
+        gs = gs.reshape(1, shape[0])
+        return torch.tensor(0, dtype=torch.float, device=gr.device)
+
+    dis_weight = torch.sum(1 - torch.sum(gr * gs, dim=-1) / (torch.norm(gr, dim=-1) * torch.norm(gs, dim=-1) + 1e-6))
+    dis = dis_weight
+    return dis
+
+
+def get_match_loss(g_syn, g_real, metric='fancy'):
     d = torch.tensor(0.0).to(DEVICE)
 
     if metric == 'mse':
@@ -167,6 +206,12 @@ def get_match_loss(g_syn, g_real, metric='mse'):
         g_syn_vec = torch.cat(g_syn_vec, dim=0)
         d = torch.sum((g_syn_vec - g_real_vec)**2)
 
+    elif metric == 'fancy':
+        for ig in range(len(g_real)):
+            gr = g_real[ig]
+            gs = g_syn[ig]
+            d += distance_wb(gr, gs)
+
     elif metric == 'cos':
         g_real_vec = []
         g_syn_vec = []
@@ -175,13 +220,13 @@ def get_match_loss(g_syn, g_real, metric='mse'):
             g_syn_vec.append(g_syn[ig].reshape((-1)))
         g_real_vec = torch.cat(g_real_vec, dim=0)
         g_syn_vec = torch.cat(g_syn_vec, dim=0)
-        d = 1 - torch.sum(g_real_vec * g_syn_vec, dim=-1) / (torch.norm(g_real_vec, dim=-1) * torch.norm(g_syn_vec, dim=-1) + 0.000001)
+        d = 1 - torch.sum(g_real_vec * g_syn_vec, dim=-1) / (torch.norm(g_real_vec, dim=-1) * torch.norm(g_syn_vec, dim=-1) + 1e-6)
 
     return d
 
 
 def get_random_images(real_imgs, class_indices, c, num_imgs=1):
-    shuffle_indices = np.random.permutation(len(class_indices[c]))[:num_imgs]
+    shuffle_indices = np.random.permutation(class_indices[c])[:num_imgs]
     return real_imgs[shuffle_indices]
 
 
@@ -195,14 +240,14 @@ def iteration(net, loss_fn, optimizer, train_loader, is_training=True):
     else:
         net.eval()
 
-    for _, data in enumerate(train_loader, 0):
+    for _, data in enumerate(train_loader):
         img = data[0].float().to(DEVICE)
         lab = data[1].long().to(DEVICE)
         n_b = lab.shape[0]
 
         out = net(img)
         l = loss_fn(out, lab)
-        acc = np.sum(np.equal(torch.argmax(out, dim=1).cpu().detach().numpy(), lab.cpu().detach().numpy())) / n_b
+        acc = np.sum(np.equal(np.argmax(out.cpu().data.numpy(), axis=-1), lab.cpu().data.numpy()))
 
         loss_avg += l.item() * n_b
         acc_avg += acc
@@ -219,13 +264,13 @@ def iteration(net, loss_fn, optimizer, train_loader, is_training=True):
     return loss_avg, acc_avg
 
 
-def get_synset_evaluation(it_eval, net_eval, image_syn_eval, label_syn_eval, test_loader, epoch_eval_train):
+def get_synset_evaluation(it_eval, net_eval, image_syn_eval, label_syn_eval, test_loader, epoch_eval_train, lr_network):
     image_syn_eval, label_syn_eval = image_syn_eval.to(DEVICE), label_syn_eval.to(DEVICE)
 
-    lr = LR_SYNTHETIC
+    lr = lr_network
     lr_scheduler = [epoch_eval_train // 2 + 1]
 
-    optimizer = torch.optim.SGD(net_eval.parameters(), lr=LR_SYNTHETIC, momentum=0.9)
+    optimizer = torch.optim.SGD(net_eval.parameters(), lr=lr, momentum=0.9)
     loss_fn = torch.nn.CrossEntropyLoss().to(DEVICE)
 
     train_dataset = TensorDataset(image_syn_eval, label_syn_eval)
@@ -244,3 +289,15 @@ def get_synset_evaluation(it_eval, net_eval, image_syn_eval, label_syn_eval, tes
     print('Evaluation for iteration {} is completed in {:.2f} seconds, train loss = {:.2f}, train acc = {:.2f}, test loss = {:.2f}, test acc = {:.2f}'.format(it_eval, finish_time, train_loss, train_accuracy, test_loss, test_accuracy))
 
     return train_accuracy, test_accuracy
+
+
+def save_img_result(img_syn, args, exp, it, dataset_info):
+    save_path = os.path.join(PWD, 'syndata', f'{args.network}_{args.dataset}_{args.ipc}_exp{exp}_it{it}.png')
+    img_syn_visualizer = copy.deepcopy(img_syn.detach().cpu())
+    for channel in range(dataset_info.num_of_channels):
+        img_syn_visualizer[:, channel] = img_syn_visualizer[:, channel] * dataset_info.std[channel] + dataset_info.mean[channel]
+
+    img_syn_visualizer[img_syn_visualizer < 0] = 0.0
+    img_syn_visualizer[img_syn_visualizer > 1] = 1.0
+
+    save_image(img_syn_visualizer, save_path, nrow=args.ipc)
