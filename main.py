@@ -164,6 +164,7 @@ if __name__ == "__main__":
                 img_opt.step()
                 loss_avg += loss.item()
 
+                # No need to update the network parameters in the last iteration
                 if outer == outer_loop - 1:
                     break
                 
