@@ -37,6 +37,18 @@ class Logger:
         logging.info(message)
 
 
+class TensorDataset(Dataset):
+    def __init__(self, images, labels):
+        self.images = images.detach().float()
+        self.labels = labels.detach()
+
+    def __getitem__(self, index):
+        return self.images[index], self.labels[index]
+
+    def __len__(self):
+        return self.images.shape[0]
+
+
 class DatasetInfo:
     DATASETS_INFO ={
         'mnist': {
@@ -103,19 +115,6 @@ class DatasetInfo:
             self.train_dataset = datasets.SVHN(root=dataset_path, split='train', download=True, transform=self.transform)
             self.test_dataset = datasets.SVHN(root=dataset_path, split='test', download=True, transform=self.transform)
 
-
-class TensorDataset(Dataset):
-    def __init__(self, images, labels):
-        self.images = images.detach().float()
-        self.labels = labels.detach()
-
-    def __getitem__(self, index):
-        return self.images[index], self.labels[index]
-
-    def __len__(self):
-        return self.images.shape[0]
-
-
 def get_network(network_name: str, num_channels: int, num_classes: int, img_size=(28, 28)) -> torch.nn.Module | None:
 
     network_name = network_name.lower()
@@ -152,6 +151,7 @@ def get_current_time():
 def get_outer_and_inner_loops(ipc=1):
     outer_loop, inner_loop = 1, 1
 
+    # These values are determined by the authors of the paper and supposed to work the best
     if ipc == 1:
         outer_loop, inner_loop = 1, 1
 
@@ -165,32 +165,36 @@ def get_outer_and_inner_loops(ipc=1):
 
 
 def get_eval_pool(model, eval_mode='M'):
+    # Multi-Architecture Evaluation Pool
     if eval_mode == 'M':
         model_eval_pool = ['MLP', 'ConvNet', 'LeNet', 'AlexNet']
+
     elif eval_mode == 'I':
         model_eval_pool = [model]
 
     return model_eval_pool
 
 
-def distance_wb(gr, gs):
-    shape = gr.shape
-    if len(shape) == 4: # conv, out*in*h*w
-        gr = gr.reshape(shape[0], shape[1] * shape[2] * shape[3])
-        gs = gs.reshape(shape[0], shape[1] * shape[2] * shape[3])
-    elif len(shape) == 3:  # layernorm, C*h*w
-        gr = gr.reshape(shape[0], shape[1] * shape[2])
-        gs = gs.reshape(shape[0], shape[1] * shape[2])
-    elif len(shape) == 2: # linear, out*in
-        tmp = 'do nothing'
-    elif len(shape) == 1: # groupnorm x, bias
-        gr = gr.reshape(1, shape[0])
-        gs = gs.reshape(1, shape[0])
-        return torch.tensor(0, dtype=torch.float, device=gr.device)
+def distance_wb(g_real, g_syn):
+    shape = g_real.shape
+    if len(shape) == 4:
+        g_real = g_real.reshape(shape[0], shape[1] * shape[2] * shape[3])
+        g_syn = g_syn.reshape(shape[0], shape[1] * shape[2] * shape[3])
 
-    dis_weight = torch.sum(1 - torch.sum(gr * gs, dim=-1) / (torch.norm(gr, dim=-1) * torch.norm(gs, dim=-1) + 1e-6))
-    dis = dis_weight
-    return dis
+    elif len(shape) == 3:
+        g_real = g_real.reshape(shape[0], shape[1] * shape[2])
+        g_syn = g_syn.reshape(shape[0], shape[1] * shape[2])
+
+    elif len(shape) == 1:
+        g_real = g_real.reshape(1, shape[0])
+        g_syn = g_syn.reshape(1, shape[0])
+
+        return torch.tensor(0, dtype=torch.float, device=DEVICE)
+
+    d_weight = torch.sum(1 - torch.sum(g_real * g_syn, dim=-1) / (torch.norm(g_real, dim=-1) * torch.norm(g_syn, dim=-1) + 1e-6))
+    d = d_weight
+
+    return d
 
 
 def get_match_loss(g_syn, g_real, metric='fancy'):
@@ -199,14 +203,17 @@ def get_match_loss(g_syn, g_real, metric='fancy'):
     if metric == 'mse':
         g_real_vec = []
         g_syn_vec = []
+
         for ig in range(len(g_real)):
             g_real_vec.append(g_real[ig].reshape((-1)))
             g_syn_vec.append(g_syn[ig].reshape((-1)))
+
         g_real_vec = torch.cat(g_real_vec, dim=0)
         g_syn_vec = torch.cat(g_syn_vec, dim=0)
         d = torch.sum((g_syn_vec - g_real_vec)**2)
 
     elif metric == 'fancy':
+
         for ig in range(len(g_real)):
             gr = g_real[ig]
             gs = g_syn[ig]
@@ -215,9 +222,11 @@ def get_match_loss(g_syn, g_real, metric='fancy'):
     elif metric == 'cos':
         g_real_vec = []
         g_syn_vec = []
+
         for ig in range(len(g_real)):
             g_real_vec.append(g_real[ig].reshape((-1)))
             g_syn_vec.append(g_syn[ig].reshape((-1)))
+
         g_real_vec = torch.cat(g_real_vec, dim=0)
         g_syn_vec = torch.cat(g_syn_vec, dim=0)
         d = 1 - torch.sum(g_real_vec * g_syn_vec, dim=-1) / (torch.norm(g_real_vec, dim=-1) * torch.norm(g_syn_vec, dim=-1) + 1e-6)
@@ -225,6 +234,7 @@ def get_match_loss(g_syn, g_real, metric='fancy'):
     return d
 
 
+# This function is used to get random images from the real dataset
 def get_random_images(real_imgs, class_indices, c, num_imgs=1):
     shuffle_indices = np.random.permutation(class_indices[c])[:num_imgs]
     return real_imgs[shuffle_indices]
@@ -294,6 +304,7 @@ def get_synset_evaluation(it_eval, net_eval, image_syn_eval, label_syn_eval, tes
 def save_img_result(img_syn, args, exp, it, dataset_info):
     save_path = os.path.join(PWD, 'syndata', f'{args.network}_{args.dataset}_{args.ipc}_exp{exp}_it{it}.png')
     img_syn_visualizer = copy.deepcopy(img_syn.detach().cpu())
+
     for channel in range(dataset_info.num_of_channels):
         img_syn_visualizer[:, channel] = img_syn_visualizer[:, channel] * dataset_info.std[channel] + dataset_info.mean[channel]
 
