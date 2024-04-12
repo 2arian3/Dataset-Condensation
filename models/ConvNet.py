@@ -22,7 +22,13 @@ class ConvNet(nn.Module):
         out = out.view(out.size(0), -1)
 
         return out
-
+    
+    '''
+    We define a function _get_layers that takes as input the number of channels, 
+    the width of the network, the depth of the network, 
+    the normalization type, the pooling type, 
+    and the image size.
+    '''
     def _get_layers(self, channel, net_width, net_depth, net_norm, net_pooling, im_size):
         layers = []
         in_channels = channel

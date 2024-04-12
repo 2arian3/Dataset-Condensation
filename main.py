@@ -27,6 +27,7 @@ from utils.consts import (DEVICE,
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Process the input parameters')
     
+    # Parsing the input parameters
     parser.add_argument('--dataset', type=str, default='MNIST', help='Dataset to use')
     parser.add_argument('--network', type=str, default='MLP', help='Network to use')
     parser.add_argument('--ipc', type=int, default=1, help='Images per class for the sythetic dataset')
@@ -172,6 +173,7 @@ if __name__ == "__main__":
                 syn_train_dataset = TensorDataset(syn_img_train, syn_lab_train)
                 train_loader = torch.utils.data.DataLoader(syn_train_dataset, batch_size=BATCH_SIZE_TRAIN, shuffle=True)
 
+                # Update the network parameters based on the synthetic dataset
                 for inner in range(inner_loop):
                     inner_loss_avg, inner_acc_avg = iteration(net, loss_fn, net_opt, train_loader, is_training=True)
 

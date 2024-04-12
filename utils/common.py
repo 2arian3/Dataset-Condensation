@@ -37,6 +37,7 @@ class Logger:
         logging.info(message)
 
 
+# This class is used to create a dataset from the synthetic images and labels and create a dataloader based on this dataset
 class TensorDataset(Dataset):
     def __init__(self, images, labels):
         self.images = images.detach().float()
@@ -49,6 +50,7 @@ class TensorDataset(Dataset):
         return self.images.shape[0]
 
 
+# This class is used to get the information about the dataset
 class DatasetInfo:
     DATASETS_INFO ={
         'mnist': {
@@ -115,6 +117,8 @@ class DatasetInfo:
             self.train_dataset = datasets.SVHN(root=dataset_path, split='train', download=True, transform=self.transform)
             self.test_dataset = datasets.SVHN(root=dataset_path, split='test', download=True, transform=self.transform)
 
+
+# This function is used to get the network based on the network name and the dataset information
 def get_network(network_name: str, num_channels: int, num_classes: int, img_size=(28, 28)) -> torch.nn.Module | None:
 
     network_name = network_name.lower()
@@ -144,10 +148,12 @@ def get_network(network_name: str, num_channels: int, num_classes: int, img_size
     return model
 
 
+# Used in loggings
 def get_current_time():
     return datetime.datetime.now().strftime('[%Y-%m-%d %H:%M:%S]')
 
 
+# Hyperparameters for the outer and inner loops
 def get_outer_and_inner_loops(ipc=1):
     outer_loop, inner_loop = 1, 1
 
@@ -240,6 +246,7 @@ def get_random_images(real_imgs, class_indices, c, num_imgs=1):
     return real_imgs[shuffle_indices]
 
 
+# An iteration is a a single pass through the dataset which may be used for training (updating weights) or evaluation
 def iteration(net, loss_fn, optimizer, train_loader, is_training=True):
     loss_avg, acc_avg, num_of_exp = 0, 0, 0
     net = net.to(DEVICE)
@@ -301,6 +308,7 @@ def get_synset_evaluation(it_eval, net_eval, image_syn_eval, label_syn_eval, tes
     return train_accuracy, test_accuracy
 
 
+# Visualizing the synthetic images
 def save_img_result(img_syn, args, exp, it, dataset_info):
     save_path = os.path.join(PWD, 'syndata', f'{args.network}_{args.dataset}_{args.ipc}_exp{exp}_it{it}.png')
     img_syn_visualizer = copy.deepcopy(img_syn.detach().cpu())
