@@ -46,10 +46,12 @@ if __name__ == "__main__":
         os.makedirs('data')
 
 
+    # Create the directory for the synthetic dataset
     if not os.path.exists('syndata'):
         os.makedirs('syndata')
     
     
+    # Create the directory for the logs
     if not os.path.exists('logs'):
         os.makedirs('logs')
         
